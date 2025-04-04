@@ -3,55 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Wave Earring Proto</title>
+    <title>Generated Voronoi Earring</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Local Stylesheet -->
     <link rel="stylesheet" href="style.css">
+    <!-- Load d3-delaunay library -->
+    <script src="https://cdn.jsdelivr.net/npm/d3-delaunay@6" defer></script>
+    <script src="script.js" defer></script>
 </head>
 <body>
-    <h1>Simple Wave Earring Designer</h1>
+    <h1>Generated Voronoi Earring</h1>
 
     <div class="container">
         <div class="controls">
             <h2>Controls</h2>
-            <label for="width">Width (mm):</label>
-            <input type="range" id="width" min="10" max="100" value="50">
-            <span id="width-val">50</span> mm
 
-            <label for="height">Height (mm):</label>
-            <input type="range" id="height" min="10" max="100" value="40">
-            <span id="height-val">40</span> mm
+            <p class="mode-info">Current Mode: <strong id="current-mode">Add Internal Points</strong></p>
+            <div class="mode-buttons"> <!-- Added container div for buttons -->
+                <button id="btn-mode-add" class="mode-btn active">Mode: Add Points</button>
+                <button id="btn-mode-hole" class="mode-btn">Mode: Set Hole</button>
+            </div>
 
-            <label for="frequency">Wave Amount:</label>
-            <input type="range" id="frequency" min="1" max="10" value="3" step="0.5">
-            <span id="freq-val">3</span>
+            <!-- Boundary Offset is now disabled via JS, but kept in HTML for structure -->
+            <label for="boundaryOffset">Boundary Wall Thickness:</label>
+            <input type="range" id="boundaryOffset" min="0.5" max="10" value="2.5" step="0.1" disabled>
+            <span id="boundaryOffset-val">N/A</span> units
 
-            <label for="amplitude">Wave Size:</label>
-            <input type="range" id="amplitude" min="0" max="20" value="5" step="0.5">
-            <span id="amp-val">5</span> mm
+            <label for="gapWidth">Internal Gap Width:</label>
+            <input type="range" id="gapWidth" min="5" max="20" value="1.0" step="0.1">
+            <span id="gapWidth-val">1.0</span> units
 
-            <label for="thickness">Line Thickness (mm):</label>
-            <input type="range" id="thickness" min="0.5" max="5" value="1.5" step="0.1">
-            <span id="thick-val">1.5</span> mm
-
-            <label for="holeDiam">Hole Diameter (mm):</label>
+            <label for="holeDiam">Hole Diameter:</label>ddss
             <input type="range" id="holeDiam" min="0.5" max="5" value="1.5" step="0.1">
-            <span id="holeDiam-val">1.5</span> mm
+            <span id="holeDiam-val">1.5</span> units
 
-             <p class="info">Click on preview to set hole position.</p>
-            <button id="export-btn">Generate SVG Code</button>
+            <p class="info">
+                <b>Instructions:</b><br>
+                1. Click on the canvas to add internal points (sites). Need 3+.<br>
+                2. Adjust Gap Width & Hole Diameter sliders.<br>
+                3. Click canvas again (while in 'Set Hole' mode) to set hole.<br>
+                4. Click 'Generate SVG'.<br>
+                <i>(Boundary Offset is disabled in this mode)</i>
+            </p>
+
+            <div class="action-buttons"> <!-- Container for action buttons -->
+                <button id="clear-sites-btn">Clear Internal Points</button>
+                <button id="clear-all-btn">Clear All</button>
+                <button id="export-btn" disabled>Generate SVG Code</button>
+            </div>
         </div>
 
         <div class="preview-area">
-            <h2>Preview</h2>
-            <canvas id="preview-canvas" width="400" height="400"></canvas>
-            <div id="hole-pos-info">Hole: Not set</div>
+            <h2>Preview (Canvas Units)</h2>
+            <canvas id="preview-canvas" width="500" height="500"></canvas>
         </div>
 
         <div class="export-area">
-            <h2>SVG Code</h2>
-            <textarea id="svg-output" rows="10" readonly placeholder="Click 'Generate SVG Code'"></textarea>
+            <h2>SVG Code (Unitless - Scaled by ViewBox)</h2>
+            <textarea id="svg-output" rows="10" readonly placeholder="Add 3+ points and click 'Generate SVG Code'"></textarea>
         </div>
     </div>
 
-    <script src="script.js"></script>
 </body>
 </html>

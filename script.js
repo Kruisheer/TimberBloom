@@ -1,242 +1,437 @@
-const canvas = document.getElementById('preview-canvas');
-const ctx = canvas.getContext('2d');
+// Ensure the script runs after the DOM is ready (due to 'defer' in HTML)
+document.addEventListener('DOMContentLoaded', () => {
 
-// Controls
-const widthSlider = document.getElementById('width');
-const heightSlider = document.getElementById('height');
-const freqSlider = document.getElementById('frequency');
-const ampSlider = document.getElementById('amplitude');
-const thickSlider = document.getElementById('thickness');
-const holeDiamSlider = document.getElementById('holeDiam');
+    const canvas = document.getElementById('preview-canvas');
+    if (!canvas) { console.error("Canvas element not found!"); return; }
+    const ctx = canvas.getContext('2d');
 
-// Value Displays
-const widthValSpan = document.getElementById('width-val');
-const heightValSpan = document.getElementById('height-val');
-const freqValSpan = document.getElementById('freq-val');
-const ampValSpan = document.getElementById('amp-val');
-const thickValSpan = document.getElementById('thick-val');
-const holeDiamValSpan = document.getElementById('holeDiam-val');
-const holePosInfoDiv = document.getElementById('hole-pos-info');
+    // Controls
+    const boundaryOffsetSlider = document.getElementById('boundaryOffset'); // Keep reference for disabling
+    const boundaryOffsetValSpan = document.getElementById('boundaryOffset-val'); // Keep reference for disabling
+    const gapWidthSlider = document.getElementById('gapWidth');
+    const gapWidthValSpan = document.getElementById('gapWidth-val');
+    const holeDiamSlider = document.getElementById('holeDiam');
+    const holeDiamValSpan = document.getElementById('holeDiam-val');
+    const currentModeSpan = document.getElementById('current-mode');
 
-// Export
-const exportBtn = document.getElementById('export-btn');
-const svgOutputTextarea = document.getElementById('svg-output');
+    // Buttons
+    const btnModeAdd = document.getElementById('btn-mode-add');
+    const btnModeHole = document.getElementById('btn-mode-hole');
+    const btnClearSites = document.getElementById('clear-sites-btn');
+    const btnClearAll = document.getElementById('clear-all-btn');
+    const btnExport = document.getElementById('export-btn');
 
-// --- State ---
-let state = {
-    width: 50,
-    height: 40,
-    frequency: 3,
-    amplitude: 5,
-    thickness: 1.5,
-    holeDiameter: 1.5,
-    holePos: null, // { x: mm, y: mm } relative to top-left of shape
-    points: [] // Store calculated points
-};
+    // Export
+    const svgOutputTextarea = document.getElementById('svg-output');
 
-// --- Core Functions ---
+    // --- State ---
+    let state = {
+        mode: 'addSites',
+        internalSites: [],
+        holePos: null,
+        holeDiameter: 1.5,
+        gapWidth: 1.0,
+        // Boundary offset related state removed
+        finalCellPolygons: [], // Store the valid, shrunk, BOUNDED Voronoi cells + hole
+    };
 
-function generateWavyPoints() {
-    const points = [];
-    const numSegments = 50; // How many points to define the curve
-    const halfHeight = state.height / 2;
-    const effectiveAmplitude = Math.min(state.amplitude, halfHeight); // Don't let waves exceed half height
+    // --- Constants ---
+    const SITE_RADIUS = 3;
+    const PREVIEW_FILL_COLOR = '#E8E8E8';
+    const PREVIEW_STROKE_COLOR = '#4D453E';
+    const SITE_COLOR = '#888';
+    const SVG_STROKE_WIDTH = 0.5;
+    // const VORONOI_BOUNDS_MARGIN = 20; // Original margin value
+    const EPSILON = 1e-5; // Small tolerance for checking boundary vertices
 
-    // Top edge
-    for (let i = 0; i <= numSegments; i++) {
-        const x = (i / numSegments) * state.width;
-        // Sine wave: y = amplitude * sin(frequency * angle)
-        // Angle needs to map 0 -> width to 0 -> frequency * 2 * PI
-        const angle = (i / numSegments) * state.frequency * 2 * Math.PI;
-        const yOffset = effectiveAmplitude * Math.sin(angle);
-        // Base the wave around y = halfHeight/2 (roughly top quarter)
-        const y = halfHeight / 2 - yOffset;
-        points.push({ x, y });
+    // --- Geometry Helper Functions ---
+
+    function isPointInsidePolygon(point, polygon) {
+        if (!polygon || polygon.length < 3) return false;
+        const x = point.x, y = point.y;
+        let isInside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+            const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) isInside = !isInside;
+        }
+        return isInside;
     }
 
-    // Bottom edge (reverse direction to connect properly)
-    // Use a slightly different wave (e.g., cosine or phase shift)
-    for (let i = numSegments; i >= 0; i--) {
-        const x = (i / numSegments) * state.width;
-        const angle = (i / numSegments) * state.frequency * 2 * Math.PI;
-        // Inverted cosine wave for variety, based around bottom quarter
-        const yOffset = effectiveAmplitude * Math.cos(angle + Math.PI / 4); // Phase shift
-        const y = halfHeight + halfHeight / 2 + yOffset;
-        points.push({ x, y });
+    function calculateCentroid(polygon) {
+        if (!polygon || polygon.length === 0) return null;
+        let x = 0, y = 0, area = 0;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+            const crossProduct = (xi * yj - xj * yi); area += crossProduct; x += (xi + xj) * crossProduct; y += (yi + yj) * crossProduct;
+        } area /= 2;
+        // Use EPSILON for area check
+        if (Math.abs(area) < EPSILON) {
+            if (polygon.length === 0) return null;
+            x = polygon.reduce((sum, p) => sum + p.x, 0) / polygon.length; y = polygon.reduce((sum, p) => sum + p.y, 0) / polygon.length; return { x, y };
+        } x = x / (6 * area); y = y / (6 * area); return { x, y };
     }
 
-    state.points = points; // Store generated points
-}
-
-function drawPreview() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (state.points.length < 2) return;
-
-    // Calculate scale and center offset to fit shape in canvas
-    const padding = 20; // Pixels padding
-    const availableWidth = canvas.width - 2 * padding;
-    const availableHeight = canvas.height - 2 * padding;
-
-    const scaleX = availableWidth / state.width;
-    const scaleY = availableHeight / state.height;
-    const scale = Math.min(scaleX, scaleY); // Use uniform scaling
-
-    const drawWidth = state.width * scale;
-    const drawHeight = state.height * scale;
-    const offsetX = (canvas.width - drawWidth) / 2;
-    const offsetY = (canvas.height - drawHeight) / 2;
-
-    // Apply scaling and translation
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scale, scale);
-
-    // Draw the shape
-    ctx.beginPath();
-    ctx.moveTo(state.points[0].x, state.points[0].y);
-    for (let i = 1; i < state.points.length; i++) {
-        // Use quadratic curves for smoothness (optional, lineTo is simpler)
-        // Need to calculate control points for curves, sticking to lineTo for simplicity here
-         ctx.lineTo(state.points[i].x, state.points[i].y);
-    }
-    ctx.closePath();
-
-    // Style based on state
-    ctx.lineWidth = state.thickness; // Note: thickness is in 'mm', but scales with the drawing
-    ctx.strokeStyle = '#333333';
-    ctx.stroke();
-
-    // Draw the hole if set
-    if (state.holePos) {
-        ctx.beginPath();
-        ctx.arc(
-            state.holePos.x,
-            state.holePos.y,
-            state.holeDiameter / 2, // Radius
-            0,
-            2 * Math.PI
-        );
-         ctx.fillStyle = '#ffffff'; // Draw white circle to simulate hole
-         ctx.fill();
-         ctx.lineWidth = 0.5; // Thinner stroke for hole outline
-         ctx.strokeStyle = '#888888';
-         ctx.stroke();
+    function offsetPolygon(polygon, distance) {
+        if (!polygon || polygon.length < 3) return polygon;
+        const centroid = calculateCentroid(polygon); if (!centroid) return polygon;
+        const offset = [];
+        for (const vertex of polygon) {
+            const dx = vertex.x - centroid.x; const dy = vertex.y - centroid.y; const len = Math.sqrt(dx * dx + dy * dy);
+            // Use EPSILON for length check
+            if (len < EPSILON) { offset.push({ x: vertex.x, y: vertex.y }); continue; }
+            const normX = dx / len; const normY = dy / len; const effectiveDistance = distance < 0 ? Math.max(distance, -len * 0.99) : distance;
+            offset.push({ x: vertex.x + normX * effectiveDistance, y: vertex.y + normY * effectiveDistance });
+        } return offset.length >= 3 ? offset : null;
     }
 
-    ctx.restore(); // Restore context before drawing anything else
-}
-
-function generateSvgString() {
-    if (state.points.length < 2) return "";
-
-    // Create the path 'd' attribute string
-    let pathData = `M ${state.points[0].x.toFixed(2)} ${state.points[0].y.toFixed(2)} `;
-    for (let i = 1; i < state.points.length; i++) {
-        pathData += `L ${state.points[i].x.toFixed(2)} ${state.points[i].y.toFixed(2)} `;
-    }
-    pathData += "Z"; // Close the path
-
-    // Add hole circle if it exists
-    let holeCircle = "";
-    if (state.holePos) {
-        holeCircle = `\n  <circle cx="${state.holePos.x.toFixed(2)}" cy="${state.holePos.y.toFixed(2)}" r="${(state.holeDiameter / 2).toFixed(2)}" fill="none" stroke="#000000" stroke-width="${state.thickness * 0.3}" /> <!-- NOTE: Laser cutters often ignore fill, only cut strokes -->`;
-         // Alternatively, make the hole a cut-out path using path subtraction (more complex)
-         // For simple laser cutting, just drawing the circle path is usually sufficient.
+    function circleToPolygon(cx, cy, r, numSegments = 24) {
+        const polygon = [];
+        for (let i = 0; i < numSegments; i++) {
+            const angle = (i / numSegments) * Math.PI * 2;
+            polygon.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
+        } return polygon;
     }
 
+    function reversePolygonWinding(polygon) {
+        if (!polygon || polygon.length < 3) { return polygon; }
+        return polygon.slice().reverse();
+    }
 
-    // IMPORTANT: ViewBox should match the actual dimensions for 1:1 scale
-    const svgContent = `<svg width="${state.width}mm" height="${state.height}mm" viewBox="0 0 ${state.width} ${state.height}" xmlns="http://www.w3.org/2000/svg">
-  <path d="${pathData}" fill="none" stroke="#000000" stroke-width="${state.thickness.toFixed(2)}" />${holeCircle}
-</svg>`;
+    // Helper to check if a point lies on the boundary rectangle
+    function isPointOnBounds(point, bounds) {
+        const [xmin, ymin, xmax, ymax] = bounds;
+        // Check proximity using EPSILON
+        return Math.abs(point.x - xmin) < EPSILON ||
+               Math.abs(point.x - xmax) < EPSILON ||
+               Math.abs(point.y - ymin) < EPSILON ||
+               Math.abs(point.y - ymax) < EPSILON;
+    }
 
-    return svgContent;
-}
+    // --- Core Processing Function (with logging) ---
+    function generateGeometry() {
+        console.log("--- generateGeometry START ---"); // Log start
+        state.finalCellPolygons = []; // Reset the final list
+        console.log("Sites:", state.internalSites); // Log current sites
 
-// --- Event Handlers ---
+        if (state.internalSites.length < 3) {
+            console.log("Need at least 3 sites. Skipping detailed calculation.");
+            requestAnimationFrame(drawPreview);
+            updateButtonStates();
+            console.log("--- generateGeometry END (too few points) ---");
+            return;
+        }
 
-function updateStateAndDraw() {
-    // Read values from sliders
-    state.width = parseFloat(widthSlider.value);
-    state.height = parseFloat(heightSlider.value);
-    state.frequency = parseFloat(freqSlider.value);
-    state.amplitude = parseFloat(ampSlider.value);
-    state.thickness = parseFloat(thickSlider.value);
-    state.holeDiameter = parseFloat(holeDiamSlider.value);
+        if (typeof d3 === 'undefined' || !d3.Delaunay) {
+            console.error("d3-delaunay library not loaded!");
+            console.log("--- generateGeometry END (d3 missing) ---");
+            return;
+        }
 
-    // Update display spans
-    widthValSpan.textContent = state.width;
-    heightValSpan.textContent = state.height;
-    freqValSpan.textContent = state.frequency.toFixed(1);
-    ampValSpan.textContent = state.amplitude.toFixed(1);
-    thickValSpan.textContent = state.thickness.toFixed(1);
-    holeDiamValSpan.textContent = state.holeDiameter.toFixed(1);
+        try {
+            const sitesForD3 = state.internalSites.map(p => [p.x, p.y]);
+            console.log("Sites for d3:", sitesForD3);
+            const delaunay = d3.Delaunay.from(sitesForD3);
+            console.log("Delaunay object created:", delaunay);
 
+            // 1. Calculate bounds for Voronoi calculation
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            state.internalSites.forEach(p => {
+                minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+            });
+            // *** INCREASED MARGIN FOR TESTING ***
+            const VORONOI_BOUNDS_MARGIN_TEST = 50; // Use a larger margin temporarily
+            const voronoiBounds = [
+                minX - VORONOI_BOUNDS_MARGIN_TEST, minY - VORONOI_BOUNDS_MARGIN_TEST,
+                maxX + VORONOI_BOUNDS_MARGIN_TEST, maxY + VORONOI_BOUNDS_MARGIN_TEST
+            ];
+            console.log("Voronoi Bounds:", voronoiBounds);
 
-    // Regenerate points and redraw
-    generateWavyPoints();
+            // 2. Calculate Voronoi diagram clipped to bounds
+            const voronoi = delaunay.voronoi(voronoiBounds);
+            console.log("Voronoi object created");
 
-     // Check if hole is still within bounds, reset if not
-     if (state.holePos && (state.holePos.x > state.width || state.holePos.y > state.height)) {
-        state.holePos = null;
-        holePosInfoDiv.textContent = `Hole: Not set (out of bounds)`;
-     }
+            const originalBoundedCells = []; // Keep track of original bounded cells for hole check
 
+            // 3. Filter, Shrink, and Collect Bounded Cells
+            console.log("Starting cell processing loop...");
+            for (let i = 0; i < state.internalSites.length; i++) {
+                console.log(`-- Processing cell ${i} --`);
+                const cellPolygonPoints = voronoi.cellPolygon(i); // Array of [x, y]
 
-    requestAnimationFrame(drawPreview); // Use rAF for smoother updates
-}
+                if (cellPolygonPoints && cellPolygonPoints.length >= 3) {
+                    let isBounded = true;
+                    for (const p of cellPolygonPoints) {
+                        if (isPointOnBounds({x: p[0], y: p[1]}, voronoiBounds)) {
+                            isBounded = false;
+                            // console.log(`  Vertex [${p[0]}, ${p[1]}] is on bounds.`); // Keep commented unless needed
+                            break;
+                        }
+                    }
+                    console.log(`  Cell ${i} bounded: ${isBounded}`);
 
-function handleCanvasClick(event) {
-     // Calculate click position relative to canvas element
-    const rect = canvas.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
+                    if (isBounded) {
+                        const cellPolygon = cellPolygonPoints.map(p => ({ x: p[0], y: p[1] }));
+                        originalBoundedCells.push(cellPolygon); // Store for hole check
 
-    // Convert canvas click coordinates back to shape coordinates (inverse of drawing logic)
-    const padding = 20;
-    const availableWidth = canvas.width - 2 * padding;
-    const availableHeight = canvas.height - 2 * padding;
-    const scaleX = availableWidth / state.width;
-    const scaleY = availableHeight / state.height;
-    const scale = Math.min(scaleX, scaleY);
-    const drawWidth = state.width * scale;
-    const drawHeight = state.height * scale;
-    const offsetX = (canvas.width - drawWidth) / 2;
-    const offsetY = (canvas.height - drawHeight) / 2;
+                        // Shrink the bounded cell
+                        const shrunk = offsetPolygon(cellPolygon, -state.gapWidth / 2);
+                        console.log(`  Cell ${i} shrunk result:`, shrunk ? `Valid (${shrunk.length} pts)` : 'INVALID/NULL');
 
-    // Click relative to the scaled drawing's top-left corner
-    const shapeClickX = (clickX - offsetX) / scale;
-    const shapeClickY = (clickY - offsetY) / scale;
+                        if (shrunk && shrunk.length >= 3) {
+                             // Add the valid shrunk cell to our final list
+                             state.finalCellPolygons.push(shrunk);
+                             console.log(`  ADDED shrunk cell ${i} to final list`);
+                        }
+                    }
+                } else {
+                     console.log(`  Cell ${i} polygon invalid (null or <3 points)`);
+                }
+            }
+            console.log("Finished cell processing loop.");
 
+            // 4. Add Hole if its center is inside any original bounded cell
+            if (state.holePos) {
+                console.log("Checking hole position:", state.holePos);
+                let holeIncluded = false;
+                console.log("Original bounded cells found:", originalBoundedCells.length);
+                for(const originalCell of originalBoundedCells) {
+                    if(isPointInsidePolygon(state.holePos, originalCell)) {
+                        console.log("  Hole is inside an original bounded cell.");
+                        const holePolygon = circleToPolygon(state.holePos.x, state.holePos.y, state.holeDiameter / 2);
+                        if (holePolygon && holePolygon.length >= 3) {
+                            state.finalCellPolygons.push(reversePolygonWinding(holePolygon));
+                            holeIncluded = true;
+                            console.log("  ADDED hole polygon to final list.");
+                            break; // Add only once
+                        } else {
+                            console.log("  Failed to create valid hole polygon.");
+                        }
+                    }
+                }
+                 if(!holeIncluded) {
+                    console.log("  Hole position was not inside any original bounded cell.");
+                 }
+            } else {
+                console.log("No hole position set.");
+            }
 
-     // Basic check if click is within the bounding box of the shape
-     if (shapeClickX >= 0 && shapeClickX <= state.width && shapeClickY >= 0 && shapeClickY <= state.height) {
-        state.holePos = { x: shapeClickX, y: shapeClickY };
-        holePosInfoDiv.textContent = `Hole @ (${shapeClickX.toFixed(1)}, ${shapeClickY.toFixed(1)}) mm`;
-        requestAnimationFrame(drawPreview); // Redraw with hole
-     } else {
-        console.log("Click outside shape bounds.");
-     }
-}
+        } catch (error) {
+            console.error("**** Caught error during geometry generation: ****", error); // Make error obvious
+            state.finalCellPolygons = []; // Ensure reset on error
+        }
 
+        console.log("Final polygons for drawing:", state.finalCellPolygons.length, state.finalCellPolygons); // Log final list
+        updateButtonStates();
+        requestAnimationFrame(drawPreview);
+        console.log("--- generateGeometry END ---");
+    }
 
-// --- Initial Setup ---
+    // --- Drawing Function ---
+    function drawPreview() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-// Attach listeners to all sliders
-[widthSlider, heightSlider, freqSlider, ampSlider, thickSlider, holeDiamSlider].forEach(slider => {
-    slider.addEventListener('input', updateStateAndDraw);
-});
+        // 1. Draw the final shape (collection of shrunken cells + hole)
+        if (state.finalCellPolygons.length > 0) {
+            ctx.beginPath(); // Start one path for all pieces
 
-// Export button listener
-exportBtn.addEventListener('click', () => {
-    const svgCode = generateSvgString();
-    svgOutputTextarea.value = svgCode;
-});
+             // Add paths for all valid shrunken cells and the hole
+            state.finalCellPolygons.forEach(polygon => {
+                 if (!polygon || polygon.length < 3) return;
+                 ctx.moveTo(polygon[0].x, polygon[0].y);
+                 for (let i = 1; i < polygon.length; i++) {
+                     ctx.lineTo(polygon[i].x, polygon[i].y);
+                 }
+                 ctx.closePath();
+            });
 
-// Canvas click listener
-canvas.addEventListener('click', handleCanvasClick);
+            // Fill all pieces together
+            ctx.fillStyle = PREVIEW_FILL_COLOR;
+            ctx.fill(); // Use default fill rule (nonzero)
 
+            // Stroke all pieces together
+            ctx.strokeStyle = PREVIEW_STROKE_COLOR;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
 
-// Initial draw
-updateStateAndDraw();
+        // 2. Draw Internal Sites (User Points) - Draw on top
+        if (state.internalSites.length > 0) {
+            ctx.fillStyle = SITE_COLOR;
+            state.internalSites.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, SITE_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+         // 3. Optional: Visualize Hole Center if set but not included in final shape
+        if (state.holePos) {
+            let holeIsIncluded = false;
+            for(const poly of state.finalCellPolygons) {
+                 const centroid = calculateCentroid(poly);
+                 // Check if centroid matches hole position (approximate check for hole)
+                 if (centroid && Math.abs(centroid.x - state.holePos.x) < EPSILON && Math.abs(centroid.y - state.holePos.y) < EPSILON ) {
+                    holeIsIncluded = true;
+                    break;
+                 }
+            }
+            if (!holeIsIncluded) {
+                 ctx.beginPath();
+                 ctx.arc(state.holePos.x, state.holePos.y, state.holeDiameter / 2, 0, Math.PI * 2);
+                 ctx.strokeStyle = 'rgba(220, 53, 69, 0.5)'; // Faint red
+                 ctx.setLineDash([2, 2]);
+                 ctx.lineWidth = 1;
+                 ctx.stroke();
+                 ctx.setLineDash([]);
+            }
+        }
+    }
+
+    // --- SVG Generation ---
+    function generateSvgString() {
+        if (state.finalCellPolygons.length === 0) {
+            return "<!-- Error: No valid internal Voronoi cells generated. Add more points. -->";
+        }
+
+        let svgPaths = "";
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        // Function to convert polygon points to SVG path string segment and update bounds
+        const pointsToPathAndUpdateBounds = (points) => {
+             if (!points || points.length < 3) return ""; // Need at least 3 points
+             let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)} `;
+             // Update bounds for the first point
+             minX = Math.min(minX, points[0].x); minY = Math.min(minY, points[0].y);
+             maxX = Math.max(maxX, points[0].x); maxY = Math.max(maxY, points[0].y);
+             for (let i = 1; i < points.length; i++) {
+                 d += `L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)} `;
+                 // Update bounds while iterating
+                 minX = Math.min(minX, points[i].x); minY = Math.min(minY, points[i].y);
+                 maxX = Math.max(maxX, points[i].x); maxY = Math.max(maxY, points[i].y);
+             }
+             d += "Z"; // Close the path
+             return d;
+        };
+
+        // Generate a separate path element for each final polygon
+        state.finalCellPolygons.forEach((polygon) => {
+             const pathData = pointsToPathAndUpdateBounds(polygon); // Use the bounds-updating function
+             if(pathData) { // Only add if path data was generated
+                 svgPaths += `  <path d="${pathData}" fill="none" stroke="#000000" stroke-width="${SVG_STROKE_WIDTH}" />\n`;
+             }
+        });
+
+        // Calculate final viewBox based on actual drawn geometry
+        if (minX === Infinity) { // Handle case where no valid paths were added
+            return "<!-- Error: Could not determine bounds for SVG. -->";
+        }
+        const svgWidth = Math.max(1, (maxX - minX)).toFixed(2);
+        const svgHeight = Math.max(1, (maxY - minY)).toFixed(2);
+        const padding = SVG_STROKE_WIDTH;
+        const viewBox = `${(minX - padding).toFixed(2)} ${(minY - padding).toFixed(2)} ${(parseFloat(svgWidth) + 2 * padding).toFixed(2)} ${(parseFloat(svgHeight) + 2 * padding).toFixed(2)}`;
+
+        const svgComment = `<!-- Generated Voronoi Earring - Gap Width: ${state.gapWidth.toFixed(1)}, Hole Dia: ${state.holeDiameter.toFixed(1)} -->\n`;
+        const svgContent = `<svg width="${svgWidth}px" height="${svgHeight}px" viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg">\n${svgComment}${svgPaths}</svg>`;
+        return svgContent;
+    }
+
+    // --- Event Handlers ---
+    function setMode(newMode) {
+        state.mode = newMode;
+        btnModeAdd.classList.toggle('active', newMode === 'addSites');
+        btnModeHole.classList.toggle('active', newMode === 'setHole');
+        let modeText = newMode === 'addSites' ? "Add Internal Points" : "Set Hole Position";
+        let cursorStyle = newMode === 'addSites' ? "copy" : "crosshair";
+        currentModeSpan.textContent = modeText;
+        canvas.style.cursor = cursorStyle;
+    }
+
+    function updateButtonStates() {
+        const canGenerate = state.internalSites.length >= 3;
+        btnClearSites.disabled = state.internalSites.length === 0;
+        // Enable export only if valid final polygons have been generated
+        btnExport.disabled = state.finalCellPolygons.length === 0;
+
+        // Disable boundary offset slider as it's no longer used
+        boundaryOffsetSlider.disabled = true;
+        boundaryOffsetValSpan.textContent = "N/A"; // Show N/A
+        boundaryOffsetSlider.style.opacity = 0.5; // Visual cue
+        boundaryOffsetSlider.style.cursor = 'not-allowed';
+        const boundaryLabel = document.querySelector('label[for="boundaryOffset"]');
+        if (boundaryLabel) boundaryLabel.style.opacity = 0.5;
+    }
+
+    function handleCanvasClick(event) {
+        const rect = canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        if (state.mode === 'addSites') {
+            state.internalSites.push({ x, y });
+            generateGeometry();
+        } else if (state.mode === 'setHole') {
+            state.holePos = { x, y };
+            generateGeometry(); // Regenerate to check hole inclusion
+        }
+    }
+
+    function clearAll() {
+        state.internalSites = []; state.holePos = null;
+        state.finalCellPolygons = [];
+        svgOutputTextarea.value = "";
+        setMode('addSites');
+        updateButtonStates();
+        requestAnimationFrame(drawPreview);
+    }
+
+    function clearSites() {
+         state.internalSites = [];
+         generateGeometry(); // Regenerate (will likely clear preview)
+         updateButtonStates();
+    }
+
+    // --- Initial Setup ---
+    function setupListeners() {
+        // Boundary Offset slider listener REMOVED
+
+        gapWidthSlider.addEventListener('input', (e) => {
+            state.gapWidth = parseFloat(e.target.value);
+            gapWidthValSpan.textContent = state.gapWidth.toFixed(1);
+            generateGeometry();
+        });
+        holeDiamSlider.addEventListener('input', (e) => {
+            state.holeDiameter = parseFloat(e.target.value);
+            holeDiamValSpan.textContent = state.holeDiameter.toFixed(1);
+            if(state.holePos) generateGeometry(); // Regenerate if hole exists
+             else requestAnimationFrame(drawPreview); // Just update hole preview visuals
+        });
+
+        // Mode Buttons
+        btnModeAdd.addEventListener('click', () => setMode('addSites'));
+        btnModeHole.addEventListener('click', () => setMode('setHole'));
+
+        // Action Buttons
+        btnClearSites.addEventListener('click', clearSites);
+        btnClearAll.addEventListener('click', clearAll);
+        btnExport.addEventListener('click', () => {
+            svgOutputTextarea.value = generateSvgString();
+        });
+
+        // Canvas Interaction
+        canvas.addEventListener('click', handleCanvasClick);
+
+        // Initial UI Update
+        // boundaryOffsetValSpan update REMOVED
+        gapWidthValSpan.textContent = state.gapWidth.toFixed(1);
+        holeDiamValSpan.textContent = state.holeDiameter.toFixed(1);
+        clearAll(); // Initialize state, draw empty canvas, update buttons (which disables offset slider)
+    }
+
+    // --- Run ---
+    setupListeners();
+
+}); // End DOMContentLoaded
