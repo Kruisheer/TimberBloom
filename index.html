@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="style.css">
     <!-- Load d3-delaunay library -->
     <script src="https://cdn.jsdelivr.net/npm/d3-delaunay@6" defer></script>
+    <!-- Load Local Script -->
     <script src="script.js" defer></script>
 </head>
 <body>
@@ -27,17 +28,23 @@
                 <button id="btn-mode-hole" class="mode-btn">Mode: Set Hole</button>
             </div>
 
+            <!-- Boundary Offset is now disabled via JS, but kept in HTML for structure -->
             <label for="boundaryOffset">Boundary Wall Thickness:</label>
-            <input type="range" id="boundaryOffset" min="0.5" max="10" value="2.5" step="0.1" disabled>
+            <input type="range" id="boundaryOffset" min="0.5" max="30" value="2.5" step="0.1" disabled>
             <span id="boundaryOffset-val">N/A</span> units
 
             <label for="gapWidth">Internal Gap Width:</label>
-            <input type="range" id="gapWidth" min="0.5" max="20" value="1.0" step="0.1">
+            <input type="range" id="gapWidth" min="0.5" max="30" value="1.0" step="0.1">
             <span id="gapWidth-val">1.0</span> units
 
             <label for="holeDiam">Hole Diameter:</label>
-            <input type="range" id="holeDiam" min="0.5" max="5" value="1.5" step="0.1">
+            <input type="range" id="holeDiam" min="0.5" max="30" value="1.5" step="0.1">
             <span id="holeDiam-val">1.5</span> units
+
+            <!-- Add Chamfer Radius Slider -->
+            <label for="chamferRadius">Corner Rounding Radius:</label>
+            <input type="range" id="chamferRadius" min="0" max="30" value="0" step="0.1"> <!-- Max radius might need adjustment -->
+            <span id="chamferRadius-val">0.0</span> units
 
             <p class="info">
                 <b>Instructions (Add Points Mode):</b><br>
@@ -47,7 +54,7 @@
                 <b>Instructions (Set Hole Mode):</b><br>
                 1. Click canvas to set hole position.<br>
                 ---<br>
-                - Adjust Gap Width & Hole Diameter sliders.<br>
+                - Adjust Gap Width, Hole Diameter, & Corner Rounding sliders.<br>
                 - Click 'Generate SVG' or 'Download SVG'.<br>
                 <i>(Blue lines show original cell boundaries where gaps form)</i>
             </p>
