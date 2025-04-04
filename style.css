@@ -1,0 +1,90 @@
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    background-color: #f4f4f4;
+    margin: 20px;
+}
+
+h1, h2 {
+    text-align: center;
+    color: #333;
+}
+
+.container {
+    display: flex;
+    gap: 20px;
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+
+.controls, .preview-area, .export-area {
+    flex: 1; /* Basic flex layout */
+    min-width: 250px; /* Prevent excessive squishing */
+}
+
+.controls label {
+    display: block;
+    margin-top: 10px;
+    font-weight: bold;
+}
+
+.controls input[type="range"] {
+    width: 70%;
+    margin-right: 5px;
+}
+
+.controls span {
+    display: inline-block;
+    min-width: 25px;
+    font-family: monospace;
+}
+
+.info {
+    font-size: 0.9em;
+    color: #666;
+    margin-top: 5px;
+}
+
+#preview-canvas {
+    border: 1px solid #ccc;
+    display: block;
+    margin: 10px auto; /* Center canvas */
+    background-color: #fff;
+    cursor: crosshair; /* Indicate clickability for hole */
+}
+
+#hole-pos-info {
+     text-align: center;
+     font-size: 0.9em;
+     color: #555;
+}
+
+#export-btn {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    margin-top: 20px;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1em;
+}
+
+#export-btn:hover {
+    background-color: #218838;
+}
+
+#svg-output {
+    width: 100%;
+    box-sizing: border-box; /* Include padding/border in width */
+    margin-top: 10px;
+    font-family: monospace;
+    font-size: 0.85em;
+    border: 1px solid #ccc;
+    background-color: #e9e9e9;
+}
