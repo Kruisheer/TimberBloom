@@ -14,6 +14,10 @@
     --color-primary-light: #6A9C79;
     --color-primary-dark: #3A6C49;
 
+    /* Added a blue for the border */
+    --color-info: #007bff; /* Standard Bootstrap blue */
+    --color-info-dark: #0056b3;
+
     --color-accent-warn: #E0A800; /* Muted yellow/gold for clear buttons */
     --color-accent-warn-dark: #c79400;
     --color-accent-danger: #c83349; /* Soft red for clear all */
@@ -21,8 +25,10 @@
 
     --color-canvas-bg: #FFFFFF;
     --color-preview-fill: #E8E8E8; /* Fill color for earring preview */
+    --color-preview-stroke: #4D453E; /* Stroke color for earring preview */
+    --color-gap-border: #007bff; /* Blue for the gap visualization */
     --color-site-vis: #888; /* Visualization color for sites */
-    /* Removed unused VIS colors */
+
 
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.07);
@@ -274,6 +280,11 @@ input[type=range]::-moz-range-thumb {
 
 #export-btn { background-color: var(--color-primary); }
 #export-btn:hover:not(:disabled) { background-color: var(--color-primary-dark); box-shadow: var(--shadow-md); }
+
+/* Style for the new Download button */
+#download-svg-btn { background-color: var(--color-info); }
+#download-svg-btn:hover:not(:disabled) { background-color: var(--color-info-dark); box-shadow: var(--shadow-md); }
+
 
 #clear-sites-btn { background-color: var(--color-accent-warn); color: var(--color-text); }
 #clear-sites-btn:hover:not(:disabled) { background-color: var(--color-accent-warn-dark); box-shadow: var(--shadow-md); }
