@@ -22,18 +22,17 @@
             <h2>Controls</h2>
 
             <p class="mode-info">Current Mode: <strong id="current-mode">Add Internal Points</strong></p>
-            <div class="mode-buttons"> <!-- Added container div for buttons -->
+            <div class="mode-buttons">
                 <button id="btn-mode-add" class="mode-btn active">Mode: Add Points</button>
                 <button id="btn-mode-hole" class="mode-btn">Mode: Set Hole</button>
             </div>
 
-            <!-- Boundary Offset is now disabled via JS, but kept in HTML for structure -->
             <label for="boundaryOffset">Boundary Wall Thickness:</label>
             <input type="range" id="boundaryOffset" min="0.5" max="10" value="2.5" step="0.1" disabled>
             <span id="boundaryOffset-val">N/A</span> units
 
             <label for="gapWidth">Internal Gap Width:</label>
-            <input type="range" id="gapWidth" min="0.5" max="40" value="1.0" step="0.1"> <!-- Min Gap set to 0.5 -->
+            <input type="range" id="gapWidth" min="0.5" max="20" value="1.0" step="0.1">
             <span id="gapWidth-val">1.0</span> units
 
             <label for="holeDiam">Hole Diameter:</label>
@@ -41,20 +40,23 @@
             <span id="holeDiam-val">1.5</span> units
 
             <p class="info">
-                <b>Instructions:</b><br>
-                1. Click on the canvas to add internal points (sites). Need 3+.<br>
-                2. Adjust Gap Width & Hole Diameter sliders.<br>
-                3. Click canvas again (while in 'Set Hole' mode) to set hole.<br>
-                4. Click 'Generate SVG' or 'Download SVG'.<br>
-                <i>(Boundary Offset is disabled)</i><br>
+                <b>Instructions (Add Points Mode):</b><br>
+                1. Click empty space to add points (sites). Need 3+.<br>
+                2. Click & drag points to move them.<br>
+                3. Shift + Click a point to delete it.<br>
+                <b>Instructions (Set Hole Mode):</b><br>
+                1. Click canvas to set hole position.<br>
+                ---<br>
+                - Adjust Gap Width & Hole Diameter sliders.<br>
+                - Click 'Generate SVG' or 'Download SVG'.<br>
                 <i>(Blue lines show original cell boundaries where gaps form)</i>
             </p>
 
-            <div class="action-buttons"> <!-- Container for action buttons -->
+            <div class="action-buttons">
                 <button id="clear-sites-btn">Clear Internal Points</button>
                 <button id="clear-all-btn">Clear All</button>
                 <button id="export-btn" disabled>Generate SVG Code</button>
-                <button id="download-svg-btn" disabled>Download SVG File</button> <!-- Added Download Button -->
+                <button id="download-svg-btn" disabled>Download SVG File</button>
             </div>
         </div>
 
