@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Wave Earring Proto</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Simple Wave Earring Designer</h1>
+
+    <div class="container">
+        <div class="controls">
+            <h2>Controls</h2>
+            <label for="width">Width (mm):</label>
+            <input type="range" id="width" min="10" max="100" value="50">
+            <span id="width-val">50</span> mm
+
+            <label for="height">Height (mm):</label>
+            <input type="range" id="height" min="10" max="100" value="40">
+            <span id="height-val">40</span> mm
+
+            <label for="frequency">Wave Amount:</label>
+            <input type="range" id="frequency" min="1" max="10" value="3" step="0.5">
+            <span id="freq-val">3</span>
+
+            <label for="amplitude">Wave Size:</label>
+            <input type="range" id="amplitude" min="0" max="20" value="5" step="0.5">
+            <span id="amp-val">5</span> mm
+
+            <label for="thickness">Line Thickness (mm):</label>
+            <input type="range" id="thickness" min="0.5" max="5" value="1.5" step="0.1">
+            <span id="thick-val">1.5</span> mm
+
+            <label for="holeDiam">Hole Diameter (mm):</label>
+            <input type="range" id="holeDiam" min="0.5" max="5" value="1.5" step="0.1">
+            <span id="holeDiam-val">1.5</span> mm
+
+             <p class="info">Click on preview to set hole position.</p>
+            <button id="export-btn">Generate SVG Code</button>
+        </div>
+
+        <div class="preview-area">
+            <h2>Preview</h2>
+            <canvas id="preview-canvas" width="400" height="400"></canvas>
+            <div id="hole-pos-info">Hole: Not set</div>
+        </div>
+
+        <div class="export-area">
+            <h2>SVG Code</h2>
+            <textarea id="svg-output" rows="10" readonly placeholder="Click 'Generate SVG Code'"></textarea>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
