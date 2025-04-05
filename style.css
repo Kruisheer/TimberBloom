@@ -22,6 +22,9 @@
     --color-accent-warn-dark: #c79400;
     --color-accent-danger: #c83349; /* Soft red for clear all */
     --color-accent-danger-dark: #a3293a;
+    --color-accent-spread: #fd7e14; /* Bootstrap Orange for Spread */
+    --color-accent-spread-dark: #e66a05; /* Darker Orange */
+
 
     --color-canvas-bg: #FFFFFF;
     --color-preview-fill: #E8E8E8; /* Fill color for earring preview */
@@ -250,7 +253,7 @@ input[type=range]::-moz-range-thumb {
     box-shadow: var(--shadow-sm);
 }
 
-/* Action Buttons (Clear, Export) */
+/* Action Buttons (Clear, Export, Spread) */
 .action-buttons {
     margin-top: 25px; /* Add space above action buttons */
     display: flex;
@@ -281,10 +284,13 @@ input[type=range]::-moz-range-thumb {
 #export-btn { background-color: var(--color-primary); }
 #export-btn:hover:not(:disabled) { background-color: var(--color-primary-dark); box-shadow: var(--shadow-md); }
 
-/* Style for the new Download button */
+/* Style for the Download button */
 #download-svg-btn { background-color: var(--color-info); }
 #download-svg-btn:hover:not(:disabled) { background-color: var(--color-info-dark); box-shadow: var(--shadow-md); }
 
+/* Style for the Spread button */
+#spread-points-btn { background-color: var(--color-accent-spread); }
+#spread-points-btn:hover:not(:disabled) { background-color: var(--color-accent-spread-dark); box-shadow: var(--shadow-md); }
 
 #clear-sites-btn { background-color: var(--color-accent-warn); color: var(--color-text); }
 #clear-sites-btn:hover:not(:disabled) { background-color: var(--color-accent-warn-dark); box-shadow: var(--shadow-md); }
