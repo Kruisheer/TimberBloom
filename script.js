@@ -1,4 +1,4 @@
-// script.js (Complete with Rounded Blue Border and All Helpers)
+// script.js (Complete with Rounded Blue Border and All Helpers - Updated with Second Rounding Fix)
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -330,105 +330,168 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } // End while(remainingSegments) loop
 
-        console.log(`Reconstructed ${polygons.length} raw boundary polygons.`);
+        // console.log(`Reconstructed ${polygons.length} raw boundary polygons.`);
         return polygons;
     }
 
+    // Helper to get the defined end point of the last command added
+    function getCommandEndPoint(command) {
+        if (!command) return null;
+        // M, L, Q all define their endpoint in 'pt'
+        if (command.type === 'M' || command.type === 'L' || command.type === 'Q') {
+            return command.pt;
+        }
+        // 'Z' doesn't have an explicit point in this structure,
+        // but conceptually returns to the start of the subpath.
+        return null;
+    }
 
+    // **** START OF UPDATED FUNCTION ****
     function applyCornerRounding(polygon, radius) {
         const commands = [];
-        if (!polygon || polygon.length < 3) { // Handle empty or degenerate polygons
-            return commands; // Return empty list
-        }
-
-        // If no rounding needed, return simple polygon commands
-        if (radius <= EPSILON) {
-            commands.push({ type: 'M', pt: polygon[0] });
-            for (let i = 1; i < polygon.length; i++) {
-                commands.push({ type: 'L', pt: polygon[i] });
-            }
-            commands.push({ type: 'Z' });
+        if (!polygon || polygon.length < 3) {
+            // console.log("Skipping rounding for degenerate polygon:", polygon);
             return commands;
         }
-
         const n = polygon.length;
-        for (let i = 0; i < n; i++) {
-            const p_prev = polygon[(i + n - 1) % n]; // Previous point, wraps around
-            const p_curr = polygon[i];             // Current corner point
-            const p_next = polygon[(i + 1) % n];     // Next point, wraps around
 
-            // Calculate vectors from current point to previous and next points
+        // --- Handle non-rounded case separately for simplicity ---
+        if (radius <= EPSILON) {
+            commands.push({ type: 'M', pt: polygon[0] });
+            let lastAddedPoint = polygon[0];
+            for (let i = 1; i < n; i++) {
+                if (!pointsAreEqual(polygon[i], lastAddedPoint, EPSILON)) {
+                     commands.push({ type: 'L', pt: polygon[i] });
+                     lastAddedPoint = polygon[i];
+                }
+            }
+            // Close path if it's not implicitly closed and has more than just M
+             if (commands.length > 1 && !pointsAreEqual(polygon[0], lastAddedPoint, EPSILON)) {
+                 commands.push({ type: 'Z' });
+             } else if (commands.length < 2) { // Only M was added
+                  return [];
+             }
+            // console.log("Sharp polygon commands:", JSON.stringify(commands));
+            return commands;
+        }
+        // --- End non-rounded case ---
+
+
+        // --- Pre-calculate start point based on the LAST corner's properties ---
+        let effectiveStartPoint;
+        const p_last = polygon[n - 1];
+        const p_prev_last = polygon[n - 2]; // Point before the last one
+        const p_next_last = polygon[0];     // Point after the last one (wraps around)
+
+        const v1_last_x = p_prev_last.x - p_last.x;
+        const v1_last_y = p_prev_last.y - p_last.y;
+        const v2_last_x = p_next_last.x - p_last.x;
+        const v2_last_y = p_next_last.y - p_last.y;
+
+        const len1_last = Math.sqrt(v1_last_x * v1_last_x + v1_last_y * v1_last_y);
+        const len2_last = Math.sqrt(v2_last_x * v2_last_x + v2_last_y * v2_last_y);
+
+        const maxRadius_last = (len1_last > EPSILON && len2_last > EPSILON) ? Math.min(len1_last, len2_last) / 2 : 0;
+        const actualRadius_last = Math.max(0, Math.min(radius, maxRadius_last));
+        const isLastSharp = actualRadius_last < EPSILON || len1_last < MIN_EDGE_FOR_ROUNDING || len2_last < MIN_EDGE_FOR_ROUNDING;
+
+        if (isLastSharp) {
+            effectiveStartPoint = p_last; // Start at the sharp corner vertex
+        } else {
+            // Start at the end-tangent point (t2) of the last corner's arc
+            const t2x_last = p_last.x + (v2_last_x / len2_last) * actualRadius_last;
+            const t2y_last = p_last.y + (v2_last_y / len2_last) * actualRadius_last;
+            effectiveStartPoint = { x: t2x_last, y: t2y_last };
+        }
+        // --- End Pre-calculation ---
+
+        // Start the path!
+        commands.push({ type: 'M', pt: effectiveStartPoint });
+
+        // --- Loop through all corners ---
+        for (let i = 0; i < n; i++) {
+            const p_prev = polygon[(i + n - 1) % n];
+            const p_curr = polygon[i];
+            const p_next = polygon[(i + 1) % n];
+
+            // Calculate vectors and lengths for the current corner
             const v1x = p_prev.x - p_curr.x;
             const v1y = p_prev.y - p_curr.y;
             const v2x = p_next.x - p_curr.x;
             const v2y = p_next.y - p_curr.y;
 
-            // Calculate lengths of the segments adjacent to the corner
             const len1 = Math.sqrt(v1x * v1x + v1y * v1y);
             const len2 = Math.sqrt(v2x * v2x + v2y * v2y);
 
-            // Ensure edge lengths are sufficient for rounding
-            if (len1 < MIN_EDGE_FOR_ROUNDING || len2 < MIN_EDGE_FOR_ROUNDING) {
-                 // If edges are too short, treat as a sharp corner
-                 if (commands.length === 0) {
-                     commands.push({ type: 'M', pt: p_curr });
-                 } else {
-                     const lastCmd = commands[commands.length - 1];
-                     // Avoid duplicate LineTo if previous command already ended here (check both L and Q endpoints)
-                     if (!(lastCmd.type === 'L' && pointsAreEqual(lastCmd.pt, p_curr, EPSILON)) &&
-                         !(lastCmd.type === 'Q' && pointsAreEqual(lastCmd.pt, p_curr, EPSILON))) {
-                         commands.push({ type: 'L', pt: p_curr });
-                     }
-                 }
-                 continue; // Skip rounding for this corner
-            }
-
-            // Clamp radius to half the shorter adjacent edge length
-            const maxRadius = Math.min(len1, len2) / 2;
+            // Determine effective radius and if the corner is sharp
+            const maxRadius = (len1 > EPSILON && len2 > EPSILON) ? Math.min(len1, len2) / 2 : 0;
             const actualRadius = Math.max(0, Math.min(radius, maxRadius));
+            const isSharp = actualRadius < EPSILON || len1 < MIN_EDGE_FOR_ROUNDING || len2 < MIN_EDGE_FOR_ROUNDING;
 
-            // If effective radius is zero, treat as sharp corner
-             if (actualRadius < EPSILON) {
-                  if (commands.length === 0) {
-                      commands.push({ type: 'M', pt: p_curr });
-                  } else {
-                       const lastCmd = commands[commands.length - 1];
-                        if (!(lastCmd.type === 'L' && pointsAreEqual(lastCmd.pt, p_curr, EPSILON)) &&
-                            !(lastCmd.type === 'Q' && pointsAreEqual(lastCmd.pt, p_curr, EPSILON))) {
-                           commands.push({ type: 'L', pt: p_curr });
-                       }
-                  }
-                  continue;
-             }
-
-
-            // Calculate tangent points T1 and T2 on the segments, distance 'actualRadius' from p_curr
-            const t1x = p_curr.x + (v1x / len1) * actualRadius;
-            const t1y = p_curr.y + (v1y / len1) * actualRadius;
-            const t2x = p_curr.x + (v2x / len2) * actualRadius;
-            const t2y = p_curr.y + (v2y / len2) * actualRadius;
-            const t1 = { x: t1x, y: t1y }; // Point on incoming edge
-            const t2 = { x: t2x, y: t2y }; // Point on outgoing edge
-
-            // Add commands: LineTo T1, then Quadratic Bezier curve with P_curr as control point to T2
-            if (commands.length === 0) { // First point needs MoveTo
-                commands.push({ type: 'M', pt: t1 });
-            } else {
-                // Check if previous command already ended at T1 to avoid redundant lines
-                 const lastCmd = commands[commands.length - 1];
-                 if (!(lastCmd.type === 'Q' && pointsAreEqual(lastCmd.pt, t1, EPSILON))) {
-                    commands.push({ type: 'L', pt: t1 });
-                 }
+            // Get the current position of the path
+            const lastPt = getCommandEndPoint(commands[commands.length - 1]);
+            if (!lastPt) { // Should only happen on first iteration if M failed? Safety check.
+                 console.error("Error: Could not get last point in path generation.");
+                 return []; // Cannot continue
             }
-            commands.push({ type: 'Q', ctrl: p_curr, pt: t2 });
-        }
 
-        // Ensure path is closed if it started
-        if (commands.length > 0) {
+            if (isSharp) {
+                // --- Handle Sharp Corner ---
+                // Add LineTo the sharp vertex IF the path isn't already there
+                if (!pointsAreEqual(lastPt, p_curr, EPSILON)) {
+                    commands.push({ type: 'L', pt: p_curr });
+                }
+            } else {
+                // --- Handle Rounded Corner ---
+                // Calculate tangent points T1 (on incoming segment) and T2 (on outgoing segment)
+                const t1x = p_curr.x + (v1x / len1) * actualRadius;
+                const t1y = p_curr.y + (v1y / len1) * actualRadius;
+                const t2x = p_curr.x + (v2x / len2) * actualRadius;
+                const t2y = p_curr.y + (v2y / len2) * actualRadius;
+                const t1 = { x: t1x, y: t1y }; // Start of arc
+                const t2 = { x: t2x, y: t2y }; // End of arc
+
+                // Add LineTo the start of the arc (t1) IF the path isn't already there
+                if (!pointsAreEqual(lastPt, t1, EPSILON)) {
+                    commands.push({ type: 'L', pt: t1 });
+                }
+
+                // Add the quadratic curve for the rounded corner
+                commands.push({ type: 'Q', ctrl: p_curr, pt: t2 });
+            }
+        } // --- End for loop ---
+
+        // --- Close the path ---
+        // Add Z command. This correctly joins the end of the last segment
+        // (which should be at effectiveStartPoint if calculations are precise)
+        // back to the initial M point. SVG handles the 'Z' appropriately.
+        if (commands.length > 1) { // Only add Z if there's more than just the initial M
            commands.push({ type: 'Z' });
         }
+
+        // --- Final cleanup for degenerate cases ---
+        // e.g., M followed immediately by Z is pointless if start/end matched
+        if (commands.length === 2 && commands[0].type === 'M' && commands[1].type === 'Z') {
+             const firstPt = getCommandEndPoint(commands[0]);
+             // Check if the M point itself was valid before removing Z
+             if (firstPt) {
+                // This case usually means the polygon was tiny or collapsed.
+                // console.log("Removing degenerate M->Z path.");
+                return [];
+             }
+             // If firstPt is null, something went wrong earlier, but still return empty.
+             return [];
+        }
+        // If only M remains after the loop (e.g., extremely small polygon)
+        if (commands.length < 2) {
+            // console.log("Removing path with only M command.");
+            return [];
+        }
+
+        // console.log("Rounded polygon commands:", JSON.stringify(commands));
         return commands;
     }
+    // **** END OF UPDATED FUNCTION ****
 
 
     function regenerateDisplayGeometry() {
@@ -627,11 +690,12 @@ document.addEventListener('DOMContentLoaded', () => {
          if (state.holePos) {
               const approxHoleRadiusSq = (state.holeDiameter / 2)**2;
               let holeIsIncluded = state.finalCellPolygons.some(poly =>
-                 poly.length > 10 &&
-                 poly.every(p => {
+                 poly.length > 10 && // Basic check for a circle polygon
+                 poly.every(p => { // Check if all points are roughly equidistant from holePos
                      const dx = p.x - state.holePos.x; const dy = p.y - state.holePos.y;
                      const distSq = dx*dx + dy*dy;
-                     return Math.abs(distSq - approxHoleRadiusSq) < approxHoleRadiusSq * 0.5;
+                     // Use a tolerance band around the expected squared radius
+                     return Math.abs(distSq - approxHoleRadiusSq) < approxHoleRadiusSq * 0.75; // Increased tolerance
                  })
              );
              if (!holeIsIncluded) {
@@ -645,8 +709,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- SVG Generation ---
     function generateSvgString() {
         if (!state.displayCommandsList || state.displayCommandsList.length === 0) {
-             if (state.finalCellPolygons.length === 0) return "<!-- Error: No valid cells generated. -->";
-             else return "<!-- Error: Failed to generate display geometry. -->";
+             if (state.finalCellPolygons.length === 0 && state.rawBoundaryPolygons.length === 0) return "<!-- Error: No valid cells or boundary generated. Add 3+ points. -->";
+             else if (state.finalCellPolygons.length === 0) return "<!-- Error: Failed to generate internal cell geometry. -->";
+             else return "<!-- Error: Failed to generate display commands from geometry. -->";
         }
         let combinedPathData = ""; let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         const updateBounds = (pt) => { if(!pt) return; minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y); maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y); };
@@ -661,9 +726,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }); combinedPathData += segmentData;
         });
-        if (!combinedPathData) return "<!-- Error: Could not generate path data. -->";
+        if (!combinedPathData) return "<!-- Error: Could not generate path data string. -->";
         const svgPaths = `  <path d="${combinedPathData.trim()}" fill-rule="evenodd" fill="none" stroke="#000000" stroke-width="${SVG_STROKE_WIDTH}" />\n`;
-        if (minX === Infinity) return "<!-- Error: Could not determine bounds. -->";
+        if (minX === Infinity) return "<!-- Error: Could not determine SVG bounds. -->";
         const svgWidth = Math.max(1, (maxX - minX)).toFixed(2); const svgHeight = Math.max(1, (maxY - minY)).toFixed(2); const padding = SVG_STROKE_WIDTH * 2;
         const viewBox = `${(minX - padding).toFixed(2)} ${(minY - padding).toFixed(2)} ${(parseFloat(svgWidth) + 2 * padding).toFixed(2)} ${(parseFloat(svgHeight) + 2 * padding).toFixed(2)}`;
         const svgComment = `<!-- Generated Voronoi Earring - Gap: ${state.gapWidth.toFixed(1)}, Hole: ${state.holeDiameter.toFixed(1)}, Rounding: ${state.chamferRadius.toFixed(1)} -->\n`;
@@ -691,13 +756,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Event Handlers ---
     function setMode(newMode) { state.mode = newMode; state.isDragging = false; state.draggingSiteIndex = null; state.hoveredSiteIndex = null; btnModeAdd.classList.toggle('active', newMode === 'addSites'); btnModeHole.classList.toggle('active', newMode === 'setHole'); currentModeSpan.textContent = newMode === 'addSites' ? "Add Internal Points" : "Set Hole Position"; updateCursor(); requestAnimationFrame(drawPreview); }
-    function updateButtonStates() { const canGenerate = state.internalSites.length >= 3 && state.displayCommandsList.length > 0; btnClearSites.disabled = state.internalSites.length === 0; btnExport.disabled = !canGenerate; btnDownloadSvg.disabled = !canGenerate; boundaryOffsetSlider.disabled = true; boundaryOffsetValSpan.textContent = "N/A"; boundaryOffsetSlider.style.opacity = 0.5; boundaryOffsetSlider.style.cursor = 'not-allowed'; const boundaryLabel = document.querySelector('label[for="boundaryOffset"]'); if (boundaryLabel) boundaryLabel.style.opacity = 0.5;}
+    function updateButtonStates() { const hasGeometry = state.finalCellPolygons.length > 0 || state.rawBoundaryPolygons.length > 0; const canGenerate = state.internalSites.length >= 3 && hasGeometry && state.displayCommandsList.length > 0; btnClearSites.disabled = state.internalSites.length === 0; btnExport.disabled = !canGenerate; btnDownloadSvg.disabled = !canGenerate; boundaryOffsetSlider.disabled = true; boundaryOffsetValSpan.textContent = "N/A"; boundaryOffsetSlider.style.opacity = 0.5; boundaryOffsetSlider.style.cursor = 'not-allowed'; const boundaryLabel = document.querySelector('label[for="boundaryOffset"]'); if (boundaryLabel) boundaryLabel.style.opacity = 0.5;}
     function updateCursor() { let cursor = CURSOR_DEFAULT; if (state.isDragging) cursor = CURSOR_GRABBING; else if (state.mode === 'addSites') cursor = state.hoveredSiteIndex !== null ? CURSOR_GRAB : CURSOR_ADD; else if (state.mode === 'setHole') cursor = CURSOR_HOLE; canvas.style.cursor = cursor;}
     function handleMouseDown(event) { event.preventDefault(); const { x, y } = getCanvasCoords(event); const siteIndex = findSiteIndexAtPoint(x, y); if (state.mode === 'addSites') { if (event.shiftKey && siteIndex !== null) { state.internalSites.splice(siteIndex, 1); state.hoveredSiteIndex = null; generateGeometry(); updateCursor(); } else if (siteIndex !== null) { state.isDragging = true; state.draggingSiteIndex = siteIndex; state.hoveredSiteIndex = null; updateCursor(); requestAnimationFrame(drawPreview); } else { state.internalSites.push({ x, y }); generateGeometry(); } } else if (state.mode === 'setHole') { state.holePos = { x, y }; generateGeometry(); } }
     function handleMouseMove(event) { if (!state.isDragging && state.mode !== 'addSites') return; const { x, y } = getCanvasCoords(event); if (state.isDragging) { if (state.draggingSiteIndex !== null && state.draggingSiteIndex < state.internalSites.length) { state.internalSites[state.draggingSiteIndex].x = x; state.internalSites[state.draggingSiteIndex].y = y; generateGeometry(); } else { state.isDragging = false; state.draggingSiteIndex = null; updateCursor(); } } else { const currentlyHovered = findSiteIndexAtPoint(x, y); if (currentlyHovered !== state.hoveredSiteIndex) { state.hoveredSiteIndex = currentlyHovered; updateCursor(); requestAnimationFrame(drawPreview); } } }
     function handleMouseUp(event) { if (state.isDragging) { state.isDragging = false; state.draggingSiteIndex = null; const { x, y } = getCanvasCoords(event); state.hoveredSiteIndex = findSiteIndexAtPoint(x, y); updateCursor(); requestAnimationFrame(drawPreview); } }
     function handleMouseLeave(event) { if (state.isDragging) { state.isDragging = false; state.draggingSiteIndex = null; } if (state.hoveredSiteIndex !== null) { state.hoveredSiteIndex = null; requestAnimationFrame(drawPreview); } updateCursor(); }
-    function clearAll() { state.internalSites = []; state.holePos = null; state.isDragging = false; state.draggingSiteIndex = null; state.hoveredSiteIndex = null; generateGeometry(); svgOutputTextarea.value = ""; setMode('addSites'); }
+    function clearAll() { state.internalSites = []; state.holePos = null; state.isDragging = false; state.draggingSiteIndex = null; state.hoveredSiteIndex = null; generateGeometry(); svgOutputTextarea.value = "Add 3+ points and click 'Generate SVG Code' or 'Download SVG'"; setMode('addSites'); updateButtonStates(); }
     function clearSites() { state.internalSites = []; state.isDragging = false; state.draggingSiteIndex = null; state.hoveredSiteIndex = null; generateGeometry(); }
 
 
@@ -710,7 +775,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.chamferRadius = parseFloat(e.target.value);
             chamferRadiusValSpan.textContent = state.chamferRadius.toFixed(1);
             regenerateDisplayGeometry(); // Only regenerate display/rounding, not full Voronoi
-            updateButtonStates();
+            // No need to call updateButtonStates here, regenerateDisplayGeometry calls draw, which doesn't change button states
         });
 
         // Buttons and Canvas Listeners
@@ -718,13 +783,17 @@ document.addEventListener('DOMContentLoaded', () => {
         btnClearSites.addEventListener('click', clearSites); btnClearAll.addEventListener('click', clearAll);
         btnExport.addEventListener('click', () => { svgOutputTextarea.value = generateSvgString(); }); btnDownloadSvg.addEventListener('click', downloadSvgFile);
         canvas.addEventListener('mousedown', handleMouseDown); window.addEventListener('mousemove', handleMouseMove); window.addEventListener('mouseup', handleMouseUp); canvas.addEventListener('mouseleave', handleMouseLeave);
-        canvas.addEventListener('touchstart', handleMouseDown, { passive: false }); window.addEventListener('touchmove', handleMouseMove, { passive: false }); window.addEventListener('touchend', handleMouseUp); window.addEventListener('touchcancel', handleMouseUp);
+        // Touch events mapping to mouse handlers
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleMouseDown(e); }, { passive: false });
+        window.addEventListener('touchmove', (e) => { if (state.isDragging) { e.preventDefault(); handleMouseMove(e); }}, { passive: false }); // Prevent scroll only when dragging on canvas
+        window.addEventListener('touchend', handleMouseUp);
+        window.addEventListener('touchcancel', handleMouseUp);
 
         // Initial UI Update
         gapWidthValSpan.textContent = state.gapWidth.toFixed(1);
         holeDiamValSpan.textContent = state.holeDiameter.toFixed(1);
         chamferRadiusValSpan.textContent = state.chamferRadius.toFixed(1);
-        clearAll(); // Initialize
+        clearAll(); // Initialize state and UI
     }
 
     // --- Run ---
